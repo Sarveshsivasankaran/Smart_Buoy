@@ -46,7 +46,7 @@ bool initLittleFS() {
   return true;
 }
 
-bool saveJsonToFile(const String &jsonStr, const char *path = "/data.json") {
+bool saveJsonToFile(const String &jsonStr, const char *path) {
   File f = LittleFS.open(path, "w");
   if (!f) {
     Serial.printf("Failed to open %s for writing\n", path);
@@ -57,7 +57,7 @@ bool saveJsonToFile(const String &jsonStr, const char *path = "/data.json") {
   return true;
 }
 
-String readFileFromLittleFS(const char *path = "/data.json") {
+String readFileFromLittleFS(const char *path) {
   if (!LittleFS.exists(path)) return String();
   File f = LittleFS.open(path, "r");
   if (!f) return String();
@@ -131,57 +131,60 @@ void loop() {
   // Battery voltage
   float vbat = readBatteryVoltage();
 
-  // ---------- Build JSON ----------
-  StaticJsonDocument<512> doc;
-  doc["device_id"] = "buoy001";
-  doc["ts_ms"] = millis();
+  // ---------- Build main JSON (everything except gyro) ----------
+  StaticJsonDocument<512> mainDoc;
+  mainDoc["device_id"] = "buoy001";
+  mainDoc["ts_ms"] = millis();
 
-  JsonObject motion = doc.createNestedObject("motion");
+  JsonObject motion = mainDoc.createNestedObject("motion");
   motion["acc_x"] = accX;
   motion["acc_y"] = accY;
   motion["acc_z"] = accZ;
   motion["acc_mag"] = acc_mag;
+  // NOTE: gyro removed from mainDoc
 
-  JsonObject gyro = motion.createNestedObject("gyro");
+  if (level_m >= 0) mainDoc["lvl_m"] = level_m;
+  else mainDoc["lvl_m"] = nullptr;
+
+  if (!isnan(tempC)) {
+    JsonObject weather = mainDoc.createNestedObject("weather");
+    weather["t_c"] = tempC;
+    weather["p_hPa"] = pres_hPa;
+  } else {
+    mainDoc["weather"] = nullptr;
+  }
+
+  mainDoc["vbat"] = vbat;
+
+  String mainOutput;
+  serializeJson(mainDoc, mainOutput);
+
+  // ---------- Build gyro-only JSON ----------
+  StaticJsonDocument<256> gyroDoc;
+  gyroDoc["device_id"] = "buoy001";
+  gyroDoc["ts_ms"] = millis();
+  JsonObject gyro = gyroDoc.createNestedObject("gyro");
   gyro["gx"] = gyroX;
   gyro["gy"] = gyroY;
   gyro["gz"] = gyroZ;
 
-  if (level_m >= 0) doc["lvl_m"] = level_m;
-  else doc["lvl_m"] = nullptr;
+  String gyroOutput;
+  serializeJson(gyroDoc, gyroOutput);
 
-  if (!isnan(tempC)) {
-    JsonObject weather = doc.createNestedObject("weather");
-    weather["t_c"] = tempC;
-    weather["p_hPa"] = pres_hPa;
-  } else {
-    doc["weather"] = nullptr;
-  }
+  // ---------- Print to Serial ----------
+  Serial.println("----- Main JSON (/data.json) -----");
+  Serial.println(mainOutput);
+  Serial.println("----------------------------------");
+  Serial.println("----- Gyro JSON (/gyro.json) -----");
+  Serial.println(gyroOutput);
+  Serial.println("----------------------------------");
 
-  doc["vbat"] = vbat;
+  // ---------- Save both files ----------
+  bool okMain = saveJsonToFile(mainOutput, "/data.json");
+  bool okGyro = saveJsonToFile(gyroOutput, "/gyro.json");
 
-  String output;
-  serializeJson(doc, output);
-
-  // Print JSON to Serial
-  Serial.println("----- JSON Payload -----");
-  Serial.println(output);
-  Serial.println("------------------------");
-
-  // Save JSON file to LittleFS
-  if (saveJsonToFile(output, "/data.json")) {
-    Serial.println("Saved JSON to /data.json");
-  } else {
-    Serial.println("Failed saving JSON");
-  }
-
-  // Read back for verification
-  String fileContents = readFileFromLittleFS("/data.json");
-  if (fileContents.length()) {
-    Serial.println("Read back from LittleFS:");
-    Serial.println(fileContents);
-  }
-
-  //delay 20s
+  Serial.printf("Saved /data.json: %s, /gyro.json: %s\n", okMain ? "OK" : "FAIL", okGyro ? "OK" : "FAIL");
+  
+  // delay 20s
   delay(20000);
 }
