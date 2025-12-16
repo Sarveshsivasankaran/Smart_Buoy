@@ -204,6 +204,7 @@ npm start
 
 <h2>👨‍💻 Author</h2>
 <p>
+<strong>Sarvesh S</strong><br/>
 <strong>Smart Buoy</strong><br/>
 Built as a full-stack IoT & disaster-tech project combining
 <strong>hardware, backend, and frontend engineering</strong>.
